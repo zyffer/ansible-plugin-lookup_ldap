@@ -14,19 +14,32 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
+#
+# 03/21/2018, Hidde van der Heide
+# - Improved Python 3 support and recent python-ldap
 
 from __future__ import absolute_import
+try:
+    from builtins import str
+except ImportError:
+    from __builtin__ import str
 
 from ansible import errors
 
 from ansible.parsing.splitter import parse_kv
 from ansible.plugins.lookup import LookupBase
 from ansible.template import Templar
+from ansible.module_utils._text import to_text
 
 import base64
 import ldap
 import ldap.sasl
 import threading
+
+try:
+    basestring
+except NameError:
+    basestring = str
 
 default_context = 'ldap_lookup_config'
 
@@ -72,8 +85,8 @@ def encode(p, v):
     e = p.get('encoding', None)
     if e == 'binary':
         v = base64.b64encode(v)
-    elif e is not None:
-        v = v.decode(e)
+    if e == 'text':
+        v = to_text(v)
     return v
 
 
@@ -142,7 +155,7 @@ class LookupModule(LookupBase):
 
         try:
             ctx = self.render_template(variables, ctx)
-        except Exception, e:
+        except Exception as e:
             raise errors.AnsibleError(
                 'exception while preparing LDAP parameters: %s' % e)
         self._display.vv("LDAP config: %s" % hide_pw(ctx))
@@ -166,7 +179,7 @@ class LookupModule(LookupBase):
                         attr_props[attr_name] = attr_prop_dict
 
             base_args['attrlist'] = \
-                [a.encode('ASCII') for a in attr_props
+                [str(a) for a in attr_props
                  if attr_props[a] is None
                  or not attr_props[a].get('skip', False)]
 
@@ -190,13 +203,15 @@ class LookupModule(LookupBase):
             if ctx.get('tls', False):
                 lo.start_tls_s()
             if ctx.get('auth','simple') == 'gssapi':
+                if ctx.get('gssapi',{}).get('dns_canon', True) == False:
+                    lo.set_option(ldap.OPT_X_SASL_NOCANON, 1)
                 auth_tokens = ldap.sasl.gssapi()
                 lo.sasl_interactive_bind_s('', auth_tokens)
             else:
                 # bindpw may be an AnsibleVaultEncryptedUnicode, which ldap doesn't
                 # know anything about, so cast to unicode explicitly now.
 
-                lo.simple_bind_s(ctx.get('binddn', ''), unicode(ctx.get('bindpw', '')))
+                lo.simple_bind_s(ctx.get('binddn', ''), str(ctx.get('bindpw', '')))
 
         ret = []
 
