@@ -84,7 +84,7 @@ def fill_context(ctx, inject, **kwargs):
 def encode(p, v):
     e = p.get('encoding', None)
     if e == 'binary':
-        v = base64.b64encode(v)
+        v = to_text(base64.b64encode(v))
     if e == 'text':
         v = to_text(v)
     return v
